@@ -55,44 +55,37 @@ def get_fresh_test_quartets(N: int, B_test: int = 1000, train_quartets: torch.Te
     return torch.stack(test_quartets)
 
 
+import torch
+import numpy as np
+
 def soft_four_point_penalty(D: torch.Tensor, sampled_quartets: torch.Tensor, tau=0.1):
     """
     Computes the differentiable soft four-point tree relaxation penalty vector.
-
-    Args:
-    D: computed hyperbolic distance matrix (N,N)
-    sampled_quartets: the (B,4) tensor containing sampled quartets to be used for training
-    tau: scalar value controlling temperature/ smoothness of relaxation (larger values make gradient smoother for NUTS)
-
-    Returns:
-    1D tensor of shape (B,) containing penalty for each of B quartets
-
+    Aligns exactly to the manuscript product loop formulation without allowing
+    inactive channels to zero out active backpropagation gradients.
     """
-    #splits (B,4) tensor into 4 separate tensors of length B.
     a, b, c, d = sampled_quartets[:, 0], sampled_quartets[:, 1], sampled_quartets[:, 2], sampled_quartets[:, 3]
 
+    # Compute the three path-sum tracks
     s1 = D[a, b] + D[c, d]
     s2 = D[a, c] + D[b, d]
     s3 = D[a, d] + D[b, c]
 
-    sums = torch.stack([s1, s2, s3], dim=-1) #(B,3)
+    sums = torch.stack([s1, s2, s3], dim=-1) # (B, 3)
 
-    # Advanced trick: Use broadcasting to compare all channels simultaneously
-    # sums.unsqueeze(2) shape: (B, 3, 1)
-    # sums.unsqueeze(1) shape: (B, 1, 3)
-    # diff shape: (B, 3, 3) -> diff[i, k, j] = s_k - s_j
+    # Compute differences matrix (B, 3, 3) where diff[i, k, j] = s_k - s_j
     diff = sums.unsqueeze(2) - sums.unsqueeze(1)
     
     # Apply temperature-scaled softplus relaxation: (B, 3, 3)
-    z = tau * torch.log(1 + torch.exp(diff / tau))
+    z = tau * torch.log(1.0 + torch.exp(diff / tau))
+
+    # Identity mask to handle the diagonal (when j == k, s_k - s_k = 0)
+    mask = torch.eye(3, device=D.device).unsqueeze(0)  
     
-    # Zero out the diagonal terms where k == j (since s_k - s_k = 0, softplus(0) isn't 0)
-    # We want the product only over j != k
-    mask = 1.0 - torch.eye(3, device=D.device).unsqueeze(0) # Shape: (1, 3, 3)
-    z_masked = z * mask + (1.0 - mask) # Fills diagonals with 1.0 so product ignores them
-    
-    # Multiply across the j axis (dim=2), then sum across the k axis (dim=1)
-    # This precisely evaluates the product loop from your paper 
-    penalty = torch.sum(torch.prod(z_masked, dim=2), dim=1) # Shape: (B,)
+    z_stable = torch.clamp(z, min=1e-8)
+    z_masked = z_stable * (1.0 - mask) + mask
+
+    # Aligned directly with Equation 62: multiply across columns, then sum across rows
+    penalty = torch.sum(torch.prod(z_masked, dim=2), dim=1)  # Shape: (B,)
     
     return penalty

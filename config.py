@@ -1,0 +1,9 @@
+N = 50           # Number of taxa
+K = 2            # Latent dimension
+B = 100          # Quartet budget
+SIGMA_U = 1.0    # Scale of Gaussian base prior
+LMBDA = 10.0     # Penalty strength
+TAU = 0.1        # Smoothness temperature
+SEED = 42
+WARMUP = 200
+SAMPLES = 500

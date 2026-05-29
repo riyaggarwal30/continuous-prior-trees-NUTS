@@ -1,4 +1,3 @@
-# src/model.py
 import torch
 import pyro
 import pyro.distributions as dist
@@ -6,55 +5,57 @@ from src.geometry import compute_distance_matrix
 from src.penalty import get_fixed_quartets, soft_four_point_penalty
 
 class PhylogeneticPrior:
-    def __init__(self, N, K, B, seed=42):
+    def __init__(self, N, K, B, sigma_u ,seed=42):
         self.N = N
         self.K = K
         self.B = B
-        #quartet subsets need to remain fixed across NUTS chains
-        #this is because NUTS assumes deterministic potential energy,
-        # if quartets are resampled at every leapfrog step, potential energy will change stochastically
+        self.sigma = sigma_u
         self.fixed_indices = get_fixed_quartets(N, B, seed)
 
-    def initialize(self, lmbda=1.0, sigma_u=1.0, tau=0.1):
-        """
-        This function generates the penalized prior landscape for NUTS to explore.
-
-        Args:
-        self: Instance containing N, B, and K values, plus fixed_indices.
-        lmbda: Strength of penalty measure
-        sigma_u: variance of unconstrained base prior
-        tau: scalar value controlling temperature/ smoothness of relaxation (larger values make gradient smoother for NUTS)
-
-        Returns:
-        D : torch.Tensor - induced pairwise distance matrix 
-
-        """
+    def initialize(self, lmbda_4=1.0, lmbda_g=0.0, tau=0.1, use_scale=False, g0=0.1):
         # 1. Coordinate Base Prior
-        u = pyro.sample("u", dist.Normal(0, sigma_u).expand([self.N, self.K]).to_event(1))
+        u = pyro.sample("u", dist.Normal(0, self.sigma).expand([self.N, self.K]).to_event(1))
 
         # 2. Hyperbolic Radial Projection
         u_norm = torch.norm(u, p=2, dim=-1, keepdim=True)
         u_norm_stable = torch.clamp(u_norm, min=1e-7)
-   
-        x_direction = u / u_norm_stable
-        x_magnitude = torch.tanh(u_norm)
-        x = x_direction * x_magnitude
+        x = (u / u_norm_stable) * torch.tanh(u_norm)
 
         # 3. Pairwise Metric Construction
-        D = pyro.deterministic("D", compute_distance_matrix(x))
+        D_raw = compute_distance_matrix(x)
 
-        # 4. Global Structural Penalization Force
-        # Only compute and apply the penalty if lambda is active
-        if lmbda != 0.0:
-            individual_q_penalties = soft_four_point_penalty(D, self.fixed_indices, tau)
-            avg_penalty = individual_q_penalties.mean()
-            pyro.factor("tree_force", -lmbda * avg_penalty)
+        # 4. Scale Normalization
+        triu_indices = torch.triu_indices(self.N, self.N, offset=1)
+        mean_D = torch.clamp(D_raw[triu_indices[0], triu_indices[1]].mean(), min=1e-6)
+        D_tilde = D_raw / mean_D
+        pyro.deterministic("D_tilde", D_tilde)
+
+        # 5. Structural Penalization Forces
+        if lmbda_4 != 0.0:
+            # REMOVED: .mean() here so gradients flow without smoothing out
+            p_4pt = soft_four_point_penalty(D_tilde, self.fixed_indices, tau)
             
-        return D
-    
-        # 4. Global Structural Penalization Force
-        individual_q_penalties = soft_four_point_penalty(D, self.fixed_indices, tau)
-        avg_penalty = individual_q_penalties.mean()
+            # Use a pyro.plate to inform the engine that these are independent quartet constraints
+            with pyro.plate("quartet_plate", self.B):
+                pyro.factor("four_point_force", -lmbda_4 * p_4pt)
+        if lmbda_g != 0.0:
+            a, b, c, d = self.fixed_indices[:, 0], self.fixed_indices[:, 1], self.fixed_indices[:, 2], self.fixed_indices[:, 3]
+            s1 = D_tilde[a, b] + D_tilde[c, d]
+            s2 = D_tilde[a, c] + D_tilde[b, d]
+            s3 = D_tilde[a, d] + D_tilde[b, c]
+            
+            s_stacked = torch.stack([s1, s2, s3], dim=-1)
+            s_sorted, _ = torch.sort(s_stacked, dim=-1)
+            g_q = s_sorted[..., 1] - s_sorted[..., 0]
+            
+            # FIXED: Aligned exactly to eq 62 of PDF to prevent row-wise distortion
+            p_gap = (g_q.mean() - g0) ** 2
+            pyro.factor("gap_force", -lmbda_g * p_gap)
 
-        pyro.factor("tree_force", -lmbda * avg_penalty)
-        return D
+        if use_scale:
+            log_s = pyro.sample("log_s", dist.Normal(0.0, 1.0))
+            s = torch.exp(log_s)
+            D = pyro.deterministic("D", s * D_tilde)
+            return D
+            
+        return D_tilde
