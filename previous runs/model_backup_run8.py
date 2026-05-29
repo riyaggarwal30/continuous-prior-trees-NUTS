@@ -48,17 +48,16 @@ class PhylogeneticPrior:
             s_sorted, _ = torch.sort(s_stacked, dim=-1)
             g_q = s_sorted[..., 1] - s_sorted[..., 0]
             
-            # Individual element-wise Hinge loss:
-            # Penalizes each quartet independently if its internal branch gap falls below g0
+            # Hinge loss: Only penalize quartets whose individual branch gap is smaller than g0
             individual_penalties = torch.clamp(g0 - g_q, min=0.0) ** 2
             
-            # Keep the passive tracker for logging outputs
+            # Keep the passive tracker variable for your console logging
             pyro.deterministic("star_loss", individual_penalties.mean())
             
-            # CRITICAL FIX: Push the penalties into the log-joint probability density graph
+            # CRITICAL FIX: Explicitly apply the structural force array over the quartet plate
             with pyro.plate("anti_star_plate", self.B):
                 pyro.factor("anti_star_force", -lmbda_g * individual_penalties)
-                
+
         if use_scale:
             log_s = pyro.sample("log_s", dist.Normal(0.0, 1.0))
             s = torch.exp(log_s)

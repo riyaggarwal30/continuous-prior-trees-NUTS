@@ -1,0 +1,98 @@
+
+    digraph G {
+        # Tight padding to save maximum vertical and horizontal page space
+        rankdir=TB;
+        compound=true;
+        ranksep=0.22;
+        nodesep=0.20;
+        size="6.0,3.8!";
+        ratio=fill;
+
+        # 🎨 ACADEMIC PRINT THEME (Muted, Professional, Clean White Fields)
+        fontname="Helvetica,Arial,sans-serif";
+        node [
+            fontname="Helvetica,Arial,sans-serif,Bold", 
+            fontsize=9.5, 
+            shape=box, 
+            style="filled,rounded", 
+            fillcolor="#ffffff", 
+            color="#475569", 
+            penwidth=1.2,
+            margin="0.12,0.06"
+        ];
+        edge [
+            fontname="Helvetica,Arial,sans-serif", 
+            fontsize=8.5, 
+            arrowsize=0.5, 
+            color="#64748b", 
+            penwidth=1.0
+        ];
+
+        # ─────────────────────────────────────────────────────────────────
+        # STAGE 1: PRIOR SPACE
+        # ─────────────────────────────────────────────────────────────────
+        subgraph cluster_stage1 {
+            label="STAGE 1: PRIOR SPACE";
+            fontname="Helvetica,Arial,sans-serif,Bold"; fontsize=8; fontcolor="#64748b";
+            style=dashed; color="#cbd5e1"; bgcolor="#f8fafc";
+
+            latent_u [label="Unconstrained Latent Space\nGaussian Variable Matrix (U)", shape=ellipse, color="#334155", penwidth=1.5];
+        }
+
+        # ─────────────────────────────────────────────────────────────────
+        # STAGE 2: GEOMETRIC PROJECTION
+        # ─────────────────────────────────────────────────────────────────
+        subgraph cluster_stage2 {
+            label="STAGE 2: HYPERBOLIC EMBEDDING";
+            fontname="Helvetica,Arial,sans-serif,Bold"; fontsize=8; fontcolor="#1e3a8a";
+            style=solid; color="#93c5fd"; bgcolor="#f8fafc";
+
+            radial_proj [label="Hyperbolic Radial Projection\n(Map to Poincaré Disk)", color="#2563eb"];
+            poincare_x  [label="Poincaré Coordinates (x)", shape=ellipse, color="#2563eb"];
+            raw_dist    [label="Pairwise Metrization\n(Hyperbolic Distances)", color="#2563eb"];
+            norm_scale  [label="Scale-Invariant Filtering\n(Isolate Relative Geometry)", color="#1d4ed8", style="filled,rounded", fillcolor="#eff6ff"];
+            stable_D    [label="Normalized Metric Template\nMatrix: D-tilde", shape=ellipse, color="#1d4ed8", penwidth=1.8];
+        }
+
+        # ─────────────────────────────────────────────────────────────────
+        # STAGE 3: LOSS & INFERENCE
+        # ─────────────────────────────────────────────────────────────────
+        subgraph cluster_stage3 {
+            label="STAGE 3: STRUCTURE REGULARIZATION";
+            fontname="Helvetica,Arial,sans-serif,Bold"; fontsize=8; fontcolor="#c2410c";
+            style=solid; color="#fed7aa"; bgcolor="#f8fafc";
+
+            soft_4pt_pen [label="Soft Four-Point Tree Loss\n(Differentiable Relaxation)", color="#ea580c"];
+            mcmc_loop    [label="Bayesian Inference Engine\n(Sequential NUTS MCMC)", shape=box3d, color="#c2410c", style="filled,custom", fillcolor="#fff7ed", penwidth=1.8];
+        }
+
+        # ─────────────────────────────────────────────────────────────────
+        # STAGE 4: VALIDATION
+        # ─────────────────────────────────────────────────────────────────
+        subgraph cluster_stage4 {
+            label="STAGE 4: PHYLOGENETIC EVALUATION";
+            fontname="Helvetica,Arial,sans-serif,Bold"; fontsize=8; fontcolor="#166534";
+            style=solid; color="#bbf7d0"; bgcolor="#f8fafc";
+
+            predictive  [label="Posterior Sampling Grid\n(Extract Consensus Trace)", shape=ellipse, color="#16a34a"];
+            nj_residual [label="Post-Hoc Neighbor Joining\n(Discrete Tree Projection)", color="#16a34a"];
+            output_ledger [label="Tree Metric Ledger\n• Tree Consistency Rate\n• Star-Like Tree Fraction\n• Quartet Violation Count\n• Branch Resolution Gap", shape=note, color="#15803d", fillcolor="#f0fdf4"];
+        }
+
+        # ─────────────────────────────────────────────────────────────────
+        # STREAMLINED ROUTING HIGHWAY
+        # ─────────────────────────────────────────────────────────────────
+        latent_u -> radial_proj;
+        radial_proj -> poincare_x;
+        poincare_x -> raw_dist;
+        raw_dist -> norm_scale;
+        norm_scale -> stable_D;
+
+        stable_D -> soft_4pt_pen [label=" Quartet Path Slices"];
+        soft_4pt_pen -> mcmc_loop [label=" Deform Density Graph"];
+        mcmc_loop -> predictive [label=" Export MCMC Chain Object"];
+
+        predictive -> nj_residual;
+        nj_residual -> output_ledger;
+    }
+    
